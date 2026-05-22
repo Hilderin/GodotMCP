@@ -5,6 +5,11 @@ mode: all
 model: inherit
 skills:
   - godot-scene-editing
+  - godot-debugging
+  - godot-resources
+  - godot-input-project-settings
+  - godot-ui
+  - godot-signals
 ---
 
 # Godot Agent
