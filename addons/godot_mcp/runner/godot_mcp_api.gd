@@ -315,7 +315,7 @@ func _estimate_node_cost(snapshot: Dictionary) -> int:
 	if snapshot.has("properties"):
 		for key in snapshot["properties"]:
 			cost += str(key).length() + 10
-			var val := snapshot["properties"][key]
+			var val = snapshot["properties"][key]
 			cost += _estimate_value_cost(val)
 	return cost
 

@@ -150,8 +150,14 @@ func _tool_call(params: Variant) -> Dictionary:
 	if tool_name == "stop_project":
 		return {"result": _tool_result(_stop_project())}
 
+	if tool_name == "get_documentation":
+		return {"result": _tool_result(_get_documentation(arguments))}
+
 	if tool_name == "capture_screenshot":
 		return {"result": _capture_screenshot(arguments)}
+
+	if tool_name == "get_resource":
+		return {"result": _tool_result(_get_resource(arguments))}
 
 	return {
 		"error": {
@@ -302,6 +308,249 @@ func _ensure_script_runner() -> void:
 		_script_runner = ScriptRunner.new(_editor_interface, _log_buffer)
 
 
+func _get_documentation(arguments: Dictionary) -> Dictionary:
+	var cls_name := String(arguments.get("class_name", "")).strip_edges()
+	if cls_name.is_empty():
+		return _tool_error("INVALID_PARAMS", "class_name is required")
+
+	if not ClassDB.class_exists(cls_name):
+		return _tool_error("CLASS_NOT_FOUND", "Class '%s' does not exist in ClassDB. Built-in types (String, int, float, Vector2, etc.) are not registered in ClassDB." % cls_name)
+
+	var filter := String(arguments.get("filter", ""))
+	var include_arg := arguments.get("include", null)
+	var include_inherited := bool(arguments.get("include_inherited", false))
+	var sections := _resolve_doc_sections(include_arg)
+	var no_inheritance := not include_inherited
+
+	var result := {
+		"name": cls_name,
+		"inherits": ClassDB.get_parent_class(cls_name),
+		"inheritance_chain": _inheritance_chain(cls_name),
+	}	
+
+	var doc_info = _load_doc_class_info(cls_name)
+	if doc_info != null:
+		result["brief_description"] = String(doc_info.get("brief_description", ""))
+		var desc := String(doc_info.get("description", ""))
+		if not desc.is_empty():
+			result["description"] = desc
+		var tutorials = doc_info.get("tutorials", [])
+		if tutorials is Array and not tutorials.is_empty():
+			result["tutorials"] = tutorials
+
+	if "methods" in sections:
+		result["methods"] = _doc_methods(cls_name, filter, no_inheritance, doc_info)
+	if "properties" in sections:
+		result["properties"] = _doc_properties(cls_name, filter, no_inheritance, doc_info)
+	if "signals" in sections:
+		result["signals"] = _doc_signals(cls_name, filter, no_inheritance, doc_info)
+	if "constants" in sections:
+		result["constants"] = _doc_constants(cls_name, filter, no_inheritance, doc_info)
+
+	return _tool_success(result)
+
+
+func _resolve_doc_sections(include_arg) -> Array:
+	var defaults := ["methods", "properties", "signals", "constants"]
+	if include_arg == null:
+		return defaults
+	if typeof(include_arg) != TYPE_ARRAY:
+		return defaults
+	var result := []
+	for s in include_arg:
+		if typeof(s) == TYPE_STRING and defaults.has(s):
+			result.append(String(s))
+	return result if not result.is_empty() else defaults
+
+
+func _inheritance_chain(cls_name: String) -> Array:
+	var chain := []
+	var current := cls_name
+	while not current.is_empty():
+		chain.append(current)
+		current = ClassDB.get_parent_class(current)
+	return chain
+
+
+func _load_doc_class_info(cls_name: String):
+	if not ClassDB.class_exists("DocData"):
+		return null
+	var dd = ClassDB.instantiate("DocData")
+	if dd == null or not dd.has_method("load_doc_classes"):
+		return null
+	dd.load_doc_classes()
+	if not dd.has("class_list"):
+		return null
+	var class_list = dd.get("class_list")
+	if class_list == null or not (class_list is Dictionary):
+		return null
+	return class_list.get(cls_name, null)
+
+
+func _variant_type_str(type_code: int, class_hint: String = "") -> String:
+	if type_code == TYPE_OBJECT and not class_hint.is_empty():
+		return class_hint
+	if type_code == TYPE_NIL:
+		return "void"
+	return type_string(type_code)
+
+
+func _doc_args(args: Array) -> Array:
+	var result := []
+	for a in args:
+		if not (a is Dictionary):
+			continue
+		var entry := {
+			"name": String(a.get("name", "")),
+			"type": _variant_type_str(int(a.get("type", TYPE_NIL)), String(a.get("class_name", ""))),
+		}
+		if a.get("has_default_value", false):
+			entry["default"] = String(a.get("default", ""))
+		result.append(entry)
+	return result
+
+
+func _matches_filter(name: String, filter: String, doc_entry: Dictionary = {}) -> bool:
+	if filter.is_empty():
+		return true
+	if name.match(filter):
+		return true
+	if doc_entry.has("description"):
+		var desc := String(doc_entry["description"])
+		if not desc.is_empty() and desc.match(filter):
+			return true
+	return false
+
+
+func _build_doc_lookup(doc_info, section: String) -> Dictionary:
+	var lookup := {}
+	if doc_info == null or not doc_info.has(section):
+		return lookup
+	for entry in doc_info.get(section, []):
+		if entry is Dictionary:
+			lookup[String(entry.get("name", ""))] = entry
+	return lookup
+
+
+func _doc_methods(cls_name: String, filter: String, no_inheritance: bool, doc_info) -> Array:
+	var raw := ClassDB.class_get_method_list(cls_name, no_inheritance)
+	var lookup := _build_doc_lookup(doc_info, "methods")
+	var result := []
+
+	for m in raw:
+		if not (m is Dictionary):
+			continue
+		var name := String(m.get("name", ""))
+		if not _matches_filter(name, filter, lookup.get(name, {})):
+			continue
+
+		var entry := {
+			"name": name,
+			"return_type": _variant_type_str(
+				int(m.get("return", {}).get("type", TYPE_NIL)),
+				String(m.get("return", {}).get("class_name", "")),
+			),
+			"args": _doc_args(m.get("args", [])),
+		}
+
+		var dm = lookup.get(name)
+		if dm != null:
+			var desc := String(dm.get("description", ""))
+			if not desc.is_empty():
+				entry["description"] = desc
+
+		result.append(entry)
+
+	return result
+
+
+func _doc_properties(cls_name: String, filter: String, no_inheritance: bool, doc_info) -> Array:
+	var raw := ClassDB.class_get_property_list(cls_name, no_inheritance)
+	var lookup := _build_doc_lookup(doc_info, "properties")
+	var result := []
+
+	for p in raw:
+		if not (p is Dictionary):
+			continue
+		var name := String(p.get("name", ""))
+		if not _matches_filter(name, filter, lookup.get(name, {})):
+			continue
+
+		var entry := {
+			"name": name,
+			"type": _variant_type_str(int(p.get("type", TYPE_NIL)), String(p.get("class_name", ""))),
+		}
+
+		var dp = lookup.get(name)
+		if dp != null:
+			var desc := String(dp.get("description", ""))
+			if not desc.is_empty():
+				entry["description"] = desc
+
+		result.append(entry)
+
+	return result
+
+
+func _doc_signals(cls_name: String, filter: String, no_inheritance: bool, doc_info) -> Array:
+	var raw := ClassDB.class_get_signal_list(cls_name, no_inheritance)
+	var lookup := _build_doc_lookup(doc_info, "signals")
+	var result := []
+
+	for s in raw:
+		if not (s is Dictionary):
+			continue
+		var name := String(s.get("name", ""))
+		if not _matches_filter(name, filter, lookup.get(name, {})):
+			continue
+
+		var entry := {
+			"name": name,
+			"args": _doc_args(s.get("args", [])),
+		}
+
+		var ds = lookup.get(name)
+		if ds != null:
+			var desc := String(ds.get("description", ""))
+			if not desc.is_empty():
+				entry["description"] = desc
+
+		result.append(entry)
+
+	return result
+
+
+func _doc_constants(cls_name: String, filter: String, no_inheritance: bool, doc_info) -> Array:
+	var raw := ClassDB.class_get_integer_constant_list(cls_name, no_inheritance)
+	var lookup := _build_doc_lookup(doc_info, "constants")
+	var result := []
+
+	for cname in raw:
+		if not (cname is String):
+			continue
+		if not _matches_filter(cname, filter, lookup.get(cname, {})):
+			continue
+
+		var sname := String(cname)
+		var entry := {
+			"name": sname,
+			"value": ClassDB.class_get_integer_constant(cls_name, sname),
+		}
+		var enum_name := ClassDB.class_get_integer_constant_enum(cls_name, sname)
+		if not enum_name.is_empty():
+			entry["enum"] = enum_name
+
+		var dc = lookup.get(sname)
+		if dc != null:
+			var desc := String(dc.get("description", ""))
+			if not desc.is_empty():
+				entry["description"] = desc
+
+		result.append(entry)
+
+	return result
+
+
 func _capture_screenshot(arguments: Dictionary) -> Dictionary:
 	var editor_interface = _get_editor_interface()
 	if editor_interface == null:
@@ -365,6 +614,144 @@ func _capture_editor_viewport(editor_interface: EditorInterface, area: String) -
 		return null
 
 	return viewport.get_texture().get_image()
+
+
+func _get_resource(arguments: Dictionary) -> Dictionary:
+	var path := String(arguments.get("path", "")).strip_edges()
+	if path.is_empty():
+		return _tool_error("INVALID_PARAMS", "path is required")
+
+	if not ResourceLoader.exists(path):
+		return _tool_error("RESOURCE_NOT_FOUND", "Resource not found at path", {
+			"path": path,
+		})
+
+	var resource = ResourceLoader.load(path)
+	if resource == null:
+		return _tool_error("LOAD_FAILED", "Failed to load resource, it may have unsupported type or invalid dependencies", {
+			"path": path,
+		})
+
+	var max_depth := int(arguments.get("max_depth", 1))
+	if max_depth < 0:
+		max_depth = 0
+
+	var result := _serialize_resource(resource, 0, max_depth)
+	return _tool_success(result)
+
+
+func _serialize_resource(resource: Resource, depth: int, max_depth: int) -> Dictionary:
+	var result := {
+		"type": resource.get_class(),
+		"resource_path": resource.resource_path,
+		"resource_name": resource.resource_name,
+		"resource_local_to_scene": resource.resource_local_to_scene,
+	}
+
+	if depth >= max_depth:
+		return result
+
+	var properties := {}
+	for prop in resource.get_property_list():
+		var usage: int = int(prop.get("usage", 0))
+		if usage & PROPERTY_USAGE_STORAGE == 0:
+			continue
+
+		var name := String(prop.get("name", ""))
+		if name.is_empty():
+			continue
+
+		# Skip the built-in Resource meta-properties already surfaced above
+		if name in ["resource_path", "resource_name", "resource_local_to_scene"]:
+			continue
+
+		properties[name] = _serialize_resource_value(resource.get(name), depth, max_depth)
+
+	result["properties"] = properties
+	return result
+
+
+func _serialize_resource_value(value: Variant, depth: int, max_depth: int) -> Variant:
+	match typeof(value):
+		TYPE_NIL:
+			return null
+		TYPE_BOOL:
+			return bool(value)
+		TYPE_INT:
+			return int(value)
+		TYPE_FLOAT:
+			return float(value)
+		TYPE_STRING, TYPE_STRING_NAME, TYPE_NODE_PATH:
+			return str(value)
+
+		TYPE_VECTOR2:
+			var v: Vector2 = value
+			return {"x": v.x, "y": v.y}
+		TYPE_VECTOR2I:
+			var v: Vector2i = value
+			return {"x": v.x, "y": v.y}
+		TYPE_VECTOR3:
+			var v: Vector3 = value
+			return {"x": v.x, "y": v.y, "z": v.z}
+		TYPE_VECTOR3I:
+			var v: Vector3i = value
+			return {"x": v.x, "y": v.y, "z": v.z}
+		TYPE_VECTOR4:
+			var v: Vector4 = value
+			return {"x": v.x, "y": v.y, "z": v.z, "w": v.w}
+		TYPE_VECTOR4I:
+			var v: Vector4i = value
+			return {"x": v.x, "y": v.y, "z": v.z, "w": v.w}
+		TYPE_QUATERNION:
+			var q: Quaternion = value
+			return {"x": q.x, "y": q.y, "z": q.z, "w": q.w}
+		TYPE_RECT2:
+			var r: Rect2 = value
+			return {"position": {"x": r.position.x, "y": r.position.y}, "size": {"x": r.size.x, "y": r.size.y}}
+		TYPE_RECT2I:
+			var r: Rect2i = value
+			return {"position": {"x": r.position.x, "y": r.position.y}, "size": {"x": r.size.x, "y": r.size.y}}
+		TYPE_PLANE:
+			var p: Plane = value
+			return {"normal": {"x": p.normal.x, "y": p.normal.y, "z": p.normal.z}, "d": p.d}
+		TYPE_COLOR:
+			var c: Color = value
+			return c.to_html(false)
+
+		TYPE_ARRAY:
+			var arr := []
+			for item in value:
+				arr.append(_serialize_resource_value(item, depth, max_depth))
+			return arr
+
+		TYPE_DICTIONARY:
+			var dict := {}
+			for key in value:
+				dict[str(key)] = _serialize_resource_value(value[key], depth, max_depth)
+			return dict
+
+		TYPE_OBJECT:
+			if value == null:
+				return null
+			if value is Resource:
+				return _serialize_resource(value, depth + 1, max_depth)
+			if value is Node:
+				return {
+					"type": value.get_class(),
+					"name": value.name,
+					"path": str(value.get_path()),
+				}
+			# Other engine objects (PhysicsBody, etc.) — return minimal info
+			return {
+				"type": value.get_class(),
+				"id": value.get_instance_id(),
+			}
+
+		_:
+			var str_value := str(value)
+			if str_value.length() > 0:
+				return str_value
+			return null
 
 
 func _mcp_text_result(data: Dictionary) -> Dictionary:

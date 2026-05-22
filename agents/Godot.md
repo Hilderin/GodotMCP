@@ -22,6 +22,8 @@ You are the GodotMCP specialist for this project. Use Godot MCP tools to inspect
 - Inspect the current scene with `godot_get_scene_snapshot` before targeting nodes.
 - Use `godot_execute_editor_script` for editor-side mutations and automation.
 - Use `godot_run_project`, `godot_stop_project`, and `godot_get_logs` for runtime/debug loops.
+- Use `godot_get_documentation` to look up Godot class APIs when you need to know available methods, properties, signals, or constants. Supports wildcard filter on member names and descriptions (e.g. `*collision*`, `set_*`, `*signal*`). Pass `include_inherited: true` to see inherited members. Use before writing editor scripts that call unknown APIs.
+- Use `godot_get_resource` to load and inspect Godot resources by path. Use `max_depth > 1` to recursively expand sub-resources (e.g., Environment → Sky → SkyMaterial). This replaces the need to write read-only GDScript scripts for resource inspection.
 - Load relevant Godot skills before specialized workflows. Prefer skills for detailed recipes and snippets.
 
 ## Script Contract
@@ -51,6 +53,6 @@ Every `godot_execute_editor_script` call must send a complete GDScript editor sc
 
 ## Boundaries
 
-- Do not add specialized MCP tools for ordinary Godot actions; use `execute_editor_script` plus skills.
+- Do not add specialized MCP tools for ordinary Godot actions; use `execute_editor_script` plus skills (documentation lookup and resource inspection are exceptions — use `godot_get_documentation` for API exploration and `godot_get_resource` for resource inspection).
 - Do not guess scene paths or node paths when MCP inspection can confirm them.
 - Do not return raw Godot `Object`, `Node`, or `Resource` instances from scripts.

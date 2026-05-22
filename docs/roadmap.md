@@ -147,10 +147,11 @@ Critères d'acceptation:
 
 ## Backlog Après MVP
 
-- Screenshots
-- Obtention de la documentation à même un tool
+X Screenshots
+X Obtention de la documentation à même un tool
+- Screenshots du projet quand il roule
 - MCP resources `godot://...`.
-- Capture des logs du jeu en cours.
+X Capture des logs du jeu en cours.
 - Sessions multi-éditeurs.
 - UI dock plus complète.
 - Helpers haut niveau dans `GodotMcpApi` pour création de nodes.
