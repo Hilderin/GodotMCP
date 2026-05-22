@@ -6,3 +6,5 @@
 
 [node name="MeshInstance3D" type="MeshInstance3D" parent="." unique_id=804641164]
 mesh = SubResource("PlaneMesh_6adnx")
+
+[node name="AudioSource" type="AudioStreamPlayer3D" parent="." unique_id=856471219]

@@ -64,6 +64,33 @@ func get_entries(source: String = "", limit: int = 0, level: String = "") -> Arr
 	return filtered
 
 
+func get_cursor() -> int:
+	return _entries.size()
+
+
+func get_entries_since(cursor: int, source: String = "", level: String = "") -> Array:
+	var start_index: int = clampi(cursor, 0, _entries.size())
+	var normalized_source := source.strip_edges().to_lower()
+	if normalized_source == "editor":
+		normalized_source = "console"
+	elif normalized_source == "all":
+		normalized_source = ""
+
+	var normalized_level := level.strip_edges().to_lower()
+	if normalized_level == "all":
+		normalized_level = ""
+
+	var filtered: Array = []
+	for index in range(start_index, _entries.size()):
+		var entry: Dictionary = _entries[index]
+		if not normalized_source.is_empty() and String(entry.get("source", "")) != normalized_source:
+			continue
+		if not normalized_level.is_empty() and String(entry.get("level", "")) != normalized_level:
+			continue
+		filtered.append(entry.duplicate(true))
+	return filtered
+
+
 func clear() -> void:
 	_entries.clear()
 

@@ -15,7 +15,7 @@ func list_tools() -> Array:
 					},
 					"args": {
 						"type": "object",
-						"description": "Dictionary passed to run(api, args).",
+						"description": "Dictionary passed to run(api: GodotMcpApi, args: Dictionary).",
 					},
 					"timeout_ms": {
 						"type": "integer",

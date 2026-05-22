@@ -294,4 +294,4 @@ func _scene_node_path(node: Node, scene_root: Node) -> String:
 
 func _ensure_script_runner() -> void:
 	if _script_runner == null:
-		_script_runner = ScriptRunner.new(_editor_interface)
+		_script_runner = ScriptRunner.new(_editor_interface, _log_buffer)

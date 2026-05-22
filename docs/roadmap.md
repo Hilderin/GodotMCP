@@ -147,6 +147,8 @@ Critères d'acceptation:
 
 ## Backlog Après MVP
 
+- Screenshots
+- Obtention de la documentation à même un tool
 - MCP resources `godot://...`.
 - Capture des logs du jeu en cours.
 - Sessions multi-éditeurs.
