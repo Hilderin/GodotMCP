@@ -14,8 +14,8 @@ var _host: String = "127.0.0.1"
 var _port: int = 9700
 
 
-func _init() -> void:
-	_protocol = McpProtocol.new(McpToolRegistry.new())
+func _init(editor_interface: EditorInterface = null) -> void:
+	_protocol = McpProtocol.new(McpToolRegistry.new(), editor_interface)
 
 
 func start(host: String, port: int) -> Error:

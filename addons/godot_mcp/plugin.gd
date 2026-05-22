@@ -60,7 +60,7 @@ func _ensure_setting(name: String, type: int, default_value: Variant, hint: int 
 
 
 func _start_server(host: String, port: int) -> void:
-	_server = McpHttpServer.new()
+	_server = McpHttpServer.new(get_editor_interface())
 	_server.log_callback = Callable(self, "_log")
 	var error: Error = _server.start(host, port)
 	if error != OK:
