@@ -2,7 +2,7 @@
 
 [sub_resource type="PlaneMesh" id="PlaneMesh_6adnx"]
 
-[node name="Node3D" type="Node3D" unique_id=1219973945]
+[node name="Test" type="Node3D" unique_id=1219973945]
 
 [node name="MeshInstance3D" type="MeshInstance3D" parent="." unique_id=804641164]
 mesh = SubResource("PlaneMesh_6adnx")

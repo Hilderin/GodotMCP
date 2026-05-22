@@ -50,6 +50,7 @@ func list_tools() -> Array:
 				"type": "object",
 				"properties": {
 					"source": {"type": "string"},
+					"level": {"type": "string"},
 					"limit": {"type": "integer"},
 				},
 				"additionalProperties": false,

@@ -2,6 +2,7 @@
 extends EditorPlugin
 
 const McpHttpServer := preload("server/mcp_http_server.gd")
+const ConsoleLogBuffer := preload("utils/console_log_buffer.gd")
 
 const SETTING_ENABLED := "godot_mcp/enabled"
 const SETTING_HTTP_HOST := "godot_mcp/http_host"
@@ -13,9 +14,11 @@ const DEFAULT_HTTP_PORT := 9700
 
 var _active: bool = false
 var _server = null
+var _console_log_buffer = null
 
 
 func _enter_tree() -> void:
+	_install_console_logger()
 	_register_project_settings()
 
 	if bool(ProjectSettings.get_setting(SETTING_ENABLED)):
@@ -33,6 +36,7 @@ func _exit_tree() -> void:
 		_log("plugin unloaded")
 	_active = false
 	set_process(false)
+	_uninstall_console_logger()
 
 
 func _process(_delta: float) -> void:
@@ -60,7 +64,7 @@ func _ensure_setting(name: String, type: int, default_value: Variant, hint: int 
 
 
 func _start_server(host: String, port: int) -> void:
-	_server = McpHttpServer.new(get_editor_interface())
+	_server = McpHttpServer.new(get_editor_interface(), _console_log_buffer)
 	_server.log_callback = Callable(self, "_log")
 	var error: Error = _server.start(host, port)
 	if error != OK:
@@ -78,3 +82,17 @@ func _stop_server() -> void:
 
 func _log(message: String) -> void:
 	print("[GodotMCP] %s" % message)
+
+
+func _install_console_logger() -> void:
+	if _console_log_buffer != null:
+		return
+	_console_log_buffer = ConsoleLogBuffer.new()
+	OS.add_logger(_console_log_buffer)
+
+
+func _uninstall_console_logger() -> void:
+	if _console_log_buffer == null:
+		return
+	OS.remove_logger(_console_log_buffer)
+	_console_log_buffer = null

@@ -8,11 +8,13 @@ const PROTOCOL_VERSION := "2024-11-05"
 var _tool_registry
 var _script_runner
 var _editor_interface: EditorInterface
+var _log_buffer = null
 
 
-func _init(tool_registry, editor_interface: EditorInterface = null) -> void:
+func _init(tool_registry, editor_interface: EditorInterface = null, log_buffer = null) -> void:
 	_tool_registry = tool_registry
 	_editor_interface = editor_interface
+	_log_buffer = log_buffer
 	_ensure_script_runner()
 
 
@@ -132,6 +134,9 @@ func _tool_call(params: Variant) -> Dictionary:
 		var runner_result: Dictionary = _script_runner.run(arguments.get("code", null), arguments.get("args", {}))
 		return {"result": _tool_result(runner_result)}
 
+	if tool_name == "get_logs":
+		return {"result": _tool_result(_get_logs(arguments))}
+
 	return {
 		"error": {
 			"code": JsonRpc.INTERNAL_ERROR,
@@ -150,6 +155,32 @@ func _tool_result(result: Dictionary) -> Dictionary:
 		],
 		"structuredContent": result,
 		"isError": not bool(result.get("ok", false)),
+	}
+
+
+func _get_logs(arguments: Dictionary) -> Dictionary:
+	if _log_buffer == null:
+		return {
+			"ok": false,
+			"error": {
+				"code": "LOG_BUFFER_UNAVAILABLE",
+				"message": "Console log buffer is not available",
+				"details": {},
+			},
+			"warnings": [],
+			"meta": {},
+		}
+
+	var source := String(arguments.get("source", ""))
+	var level := String(arguments.get("level", ""))
+	var limit := int(arguments.get("limit", 0))
+	return {
+		"ok": true,
+		"data": {
+			"entries": _log_buffer.get_entries(source, limit, level),
+		},
+		"warnings": [],
+		"meta": {},
 	}
 
 

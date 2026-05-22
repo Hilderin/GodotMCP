@@ -127,14 +127,26 @@ Input:
 
 ```json
 {
-  "source": "editor",
+  "source": "console",
+  "level": "error",
   "limit": 200
 }
 ```
 
+Tous les champs sont optionnels. Si `source` ou `level` est absent ou vide, le tool ne filtre pas sur ce champ. Si `limit` est absent ou vaut `0`, le buffer retourne jusqu'à sa taille maximale.
+
 Sources MVP:
 
-- `editor`: logs générés par le plugin MCP et erreurs du runner.
+- `console`: logs capturés depuis la console Godot via `OS.add_logger`.
+- `all`: combine toutes les sources capturées.
+- `editor`: alias de compatibilité pour `console`.
+
+Levels MVP:
+
+- `info`;
+- `warning`;
+- `error`;
+- `all`: alias pour aucun filtre de level.
 
 Source future:
 
