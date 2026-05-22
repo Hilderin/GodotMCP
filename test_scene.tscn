@@ -2,9 +2,45 @@
 
 [sub_resource type="PlaneMesh" id="PlaneMesh_6adnx"]
 
+[sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_6adnx"]
+resource_name = "Summer Afternoon Sky Material"
+sky_top_color = Color(0.18, 0.48, 0.92, 1)
+sky_horizon_color = Color(0.94, 0.72, 0.43, 1)
+sky_curve = 0.18
+sky_energy_multiplier = 1.18
+ground_bottom_color = Color(0.42, 0.31, 0.18, 1)
+ground_horizon_color = Color(0.88, 0.68, 0.38, 1)
+ground_curve = 0.25
+ground_energy_multiplier = 0.45
+sun_angle_max = 16.0
+sun_curve = 0.08
+
+[sub_resource type="Sky" id="Sky_uhqqe"]
+resource_name = "Warm Clear Summer Sky"
+sky_material = SubResource("ProceduralSkyMaterial_6adnx")
+
+[sub_resource type="Environment" id="Environment_ia1lp"]
+resource_name = "Summer Afternoon Environment"
+background_mode = 2
+sky = SubResource("Sky_uhqqe")
+ambient_light_source = 3
+ambient_light_color = Color(1, 0.88, 0.68, 1)
+ambient_light_energy = 0.85
+reflected_light_source = 2
+tonemap_mode = 3
+tonemap_exposure = 1.08
+glow_enabled = true
+glow_intensity = 0.18
+glow_strength = 0.45
+adjustment_enabled = true
+adjustment_brightness = 1.04
+adjustment_contrast = 1.03
+adjustment_saturation = 1.12
+
 [node name="Test" type="Node3D" unique_id=1219973945]
 
 [node name="MeshInstance3D" type="MeshInstance3D" parent="." unique_id=804641164]
 mesh = SubResource("PlaneMesh_6adnx")
 
-[node name="AudioSource" type="AudioStreamPlayer3D" parent="." unique_id=856471219]
+[node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=1124168508]
+environment = SubResource("Environment_ia1lp")

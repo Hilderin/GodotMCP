@@ -150,6 +150,9 @@ func _tool_call(params: Variant) -> Dictionary:
 	if tool_name == "stop_project":
 		return {"result": _tool_result(_stop_project())}
 
+	if tool_name == "capture_screenshot":
+		return {"result": _capture_screenshot(arguments)}
+
 	return {
 		"error": {
 			"code": JsonRpc.INTERNAL_ERROR,
@@ -295,3 +298,124 @@ func _scene_node_path(node: Node, scene_root: Node) -> String:
 func _ensure_script_runner() -> void:
 	if _script_runner == null:
 		_script_runner = ScriptRunner.new(_editor_interface, _log_buffer)
+
+
+func _capture_screenshot(arguments: Dictionary) -> Dictionary:
+	var editor_interface = _get_editor_interface()
+	if editor_interface == null:
+		return _mcp_error_result("EDITOR_UNAVAILABLE", "EditorInterface is not available")
+
+	var return_mode := String(arguments.get("return_mode", "base64"))
+	var area := String(arguments.get("area", "editor"))
+
+	var image := _capture_editor_viewport(editor_interface, area)
+	if image == null or image.is_empty():
+		return _mcp_error_result("CAPTURE_FAILED", "Failed to capture editor viewport")
+
+	var width := image.get_width()
+	var height := image.get_height()
+
+	if return_mode == "path":
+		var output_dir := String(arguments.get("output_dir", "")).strip_edges()
+		if output_dir.is_empty():
+			output_dir = OS.get_temp_dir()
+
+		var datetime := Time.get_datetime_dict_from_system()
+		var timestamp := "%d-%02d-%02d_%02d-%02d-%02d" % [
+			datetime.year, datetime.month, datetime.day,
+			datetime.hour, datetime.minute, datetime.second,
+		]
+		var file_path := output_dir.path_join("godot_screenshot_%s.png" % timestamp)
+		var save_error := image.save_png(file_path)
+		if save_error != OK:
+			return _mcp_error_result("SAVE_FAILED", "Failed to save screenshot to disk", {
+				"path": file_path,
+				"godot_error": int(save_error),
+			})
+		return _mcp_text_result({
+			"file_path": ProjectSettings.globalize_path(file_path),
+			"width": width,
+			"height": height,
+			"format": "png",
+			"area": area,
+		})
+	else:
+		var png_bytes := image.save_png_to_buffer()
+		var b64 := Marshalls.raw_to_base64(png_bytes)
+		return _mcp_image_result(b64, width, height, area)
+
+
+func _capture_editor_viewport(editor_interface: EditorInterface, area: String) -> Image:
+	var base_control = editor_interface.get_base_control()
+	if base_control == null:
+		return null
+
+	var viewport: Viewport
+	if area == "viewport":
+		var sub_viewport = editor_interface.get_editor_viewport_3d()
+		if sub_viewport != null:
+			viewport = sub_viewport
+
+	if viewport == null:
+		viewport = base_control.get_viewport()
+
+	if viewport == null:
+		return null
+
+	return viewport.get_texture().get_image()
+
+
+func _mcp_text_result(data: Dictionary) -> Dictionary:
+	return {
+		"content": [
+			{
+				"type": "text",
+				"text": JSON.stringify({"ok": true, "data": data}),
+			},
+		],
+		"isError": false,
+	}
+
+
+func _mcp_image_result(b64: String, width: int, height: int, area: String) -> Dictionary:
+	return {
+		"content": [
+			{
+				"type": "text",
+				"text": JSON.stringify({
+					"ok": true,
+					"data": {
+						"width": width,
+						"height": height,
+						"area": area,
+						"format": "png",
+					},
+				}),
+			},
+			{
+				"type": "image",
+				"data": b64,
+				"mimeType": "image/png",
+			},
+		],
+		"isError": false,
+	}
+
+
+func _mcp_error_result(code: String, message: String, details: Dictionary = {}) -> Dictionary:
+	return {
+		"content": [
+			{
+				"type": "text",
+				"text": JSON.stringify({
+					"ok": false,
+					"error": {
+						"code": code,
+						"message": message,
+						"details": details,
+					},
+				}),
+			},
+		],
+		"isError": true,
+	}

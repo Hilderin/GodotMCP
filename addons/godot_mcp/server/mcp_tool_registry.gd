@@ -72,6 +72,32 @@ func list_tools() -> Array:
 			"description": "Stop the currently running Godot project.",
 			"inputSchema": _empty_object_schema(),
 		},
+		{
+			"name": "capture_screenshot",
+			"description": "Capture a screenshot of the Godot editor. Use this to let the AI agent visually inspect the editor state, viewport, or UI. Returns the image either as base64 (embedded in MCP response for direct AI analysis) or as a file path on disk.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"return_mode": {
+						"type": "string",
+						"enum": ["base64", "path"],
+						"description": "'base64' (default) embeds the image in the MCP response via standard ImageContent so the AI can see it directly. 'path' saves to a file and returns the path.",
+						"default": "base64",
+					},
+					"area": {
+						"type": "string",
+						"enum": ["editor", "viewport"],
+						"description": "'editor' (default) captures the full editor window. 'viewport' captures the 3D editor viewport (falls back to full editor if unavailable).",
+						"default": "editor",
+					},
+					"output_dir": {
+						"type": "string",
+						"description": "Directory for the screenshot file (only used when return_mode is 'path'). Defaults to the system temporary directory.",
+					},
+				},
+				"additionalProperties": false,
+			},
+		},
 	]
 
 
