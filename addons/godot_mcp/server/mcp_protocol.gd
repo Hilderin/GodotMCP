@@ -34,6 +34,19 @@ func handle(payload: Variant) -> Dictionary:
 	}
 
 
+func handle_async(payload: Variant, callback: Callable) -> void:
+	if payload is Array:
+		_handle_batch_async(payload, callback)
+		return
+
+	_handle_single_async(payload, func(response: Variant) -> void:
+		callback.call({
+			"has_response": response != null,
+			"response": response,
+		})
+	)
+
+
 func _handle_batch(payload: Array) -> Dictionary:
 	if payload.is_empty():
 		return {
@@ -51,6 +64,32 @@ func _handle_batch(payload: Array) -> Dictionary:
 		"has_response": not responses.is_empty(),
 		"response": responses,
 	}
+
+
+func _handle_batch_async(payload: Array, callback: Callable) -> void:
+	if payload.is_empty():
+		callback.call({
+			"has_response": true,
+			"response": JsonRpc.error(null, JsonRpc.INVALID_REQUEST, "Invalid JSON-RPC batch"),
+		})
+		return
+
+	_handle_batch_item_async(payload, 0, [], callback)
+
+
+func _handle_batch_item_async(payload: Array, index: int, responses: Array, callback: Callable) -> void:
+	if index >= payload.size():
+		callback.call({
+			"has_response": not responses.is_empty(),
+			"response": responses,
+		})
+		return
+
+	_handle_single_async(payload[index], func(response: Variant) -> void:
+		if response != null:
+			responses.append(response)
+		_handle_batch_item_async(payload, index + 1, responses, callback)
+	)
 
 
 func _handle_single(request: Variant) -> Variant:
@@ -82,6 +121,41 @@ func _handle_single(request: Variant) -> Variant:
 	return JsonRpc.result(id, result.get("result", {}))
 
 
+func _handle_single_async(request: Variant, callback: Callable) -> void:
+	if not (request is Dictionary):
+		callback.call(JsonRpc.error(null, JsonRpc.INVALID_REQUEST, "Invalid JSON-RPC request"))
+		return
+
+	var id: Variant = request.get("id", null)
+	var has_id: bool = request.has("id")
+
+	if request.get("jsonrpc", "") != "2.0":
+		callback.call(JsonRpc.error(id if has_id else null, JsonRpc.INVALID_REQUEST, "Invalid JSON-RPC version"))
+		return
+
+	if not request.has("method") or typeof(request["method"]) != TYPE_STRING:
+		callback.call(JsonRpc.error(id if has_id else null, JsonRpc.INVALID_REQUEST, "Missing JSON-RPC method"))
+		return
+
+	if has_id and not JsonRpc.is_valid_id(id):
+		callback.call(JsonRpc.error(null, JsonRpc.INVALID_REQUEST, "Invalid JSON-RPC id"))
+		return
+
+	var method: String = String(request["method"])
+	var params: Variant = request.get("params", {})
+	_dispatch_async(method, params, func(result: Dictionary) -> void:
+		if not has_id:
+			callback.call(null)
+			return
+
+		if result.has("error"):
+			callback.call(JsonRpc.error(id, int(result["error"].get("code", JsonRpc.INTERNAL_ERROR)), String(result["error"].get("message", "Internal error")), result["error"].get("data", null)))
+			return
+
+		callback.call(JsonRpc.result(id, result.get("result", {})))
+	)
+
+
 func _dispatch(method: String, params: Variant) -> Dictionary:
 	match method:
 		"initialize":
@@ -96,6 +170,14 @@ func _dispatch(method: String, params: Variant) -> Dictionary:
 			return _tool_call(params)
 		_:
 			return {"error": {"code": JsonRpc.METHOD_NOT_FOUND, "message": "Method not found: %s" % method}}
+
+
+func _dispatch_async(method: String, params: Variant, callback: Callable) -> void:
+	if method == "tools/call":
+		_tool_call_async(params, callback)
+		return
+
+	callback.call(_dispatch(method, params))
 
 
 func _initialize_result(_params: Variant) -> Dictionary:
@@ -165,6 +247,37 @@ func _tool_call(params: Variant) -> Dictionary:
 			"message": "Tool execution is not implemented before later phases: %s" % tool_name,
 		}
 	}
+
+
+func _tool_call_async(params: Variant, callback: Callable) -> void:
+	if not (params is Dictionary):
+		callback.call({"error": {"code": JsonRpc.INVALID_PARAMS, "message": "Tool call params must be an object"}})
+		return
+
+	var tool_name: String = ""
+	tool_name = String(params.get("name", ""))
+
+	if tool_name.is_empty():
+		callback.call({"error": {"code": JsonRpc.INVALID_PARAMS, "message": "Missing tool name"}})
+		return
+
+	if not _tool_registry.has_tool(tool_name):
+		callback.call({"error": {"code": JsonRpc.INVALID_PARAMS, "message": "Unknown tool: %s" % tool_name}})
+		return
+
+	var arguments: Variant = params.get("arguments", {})
+	if not (arguments is Dictionary):
+		callback.call({"error": {"code": JsonRpc.INVALID_PARAMS, "message": "Tool arguments must be an object"}})
+		return
+
+	if tool_name == "execute_editor_script":
+		_ensure_script_runner()
+		_script_runner.run_deferred(arguments.get("code", null), arguments.get("args", {}), func(runner_result: Dictionary) -> void:
+			callback.call({"result": _tool_result(runner_result)})
+		)
+		return
+
+	callback.call(_tool_call(params))
 
 
 func _tool_result(result: Dictionary) -> Dictionary:

@@ -221,6 +221,27 @@ func save_resource(resource: Resource, path: String = "") -> Dictionary:
 	return success({"path": target_path})
 
 
+func save_scene() -> Dictionary:
+	var editor_interface = get_editor_interface()
+	if editor_interface == null:
+		return error("EDITOR_UNAVAILABLE", "EditorInterface is not available")
+
+	var scene := get_current_scene()
+	if scene == null:
+		return error("NO_SCENE", "No scene is currently open")
+	if scene.scene_file_path.is_empty():
+		return error("UNSAVED_SCENE", "Current scene has no file path")
+
+	var save_error: Error = editor_interface.save_scene()
+	if save_error != OK:
+		return error("SCENE_SAVE_ERROR", "Failed to save current scene", {
+			"path": scene.scene_file_path,
+			"godot_error": int(save_error),
+		})
+
+	return success({"path": scene.scene_file_path})
+
+
 func rescan_filesystem() -> void:
 	var editor_interface = get_editor_interface()
 	if editor_interface == null:

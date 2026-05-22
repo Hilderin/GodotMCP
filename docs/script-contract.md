@@ -73,7 +73,7 @@ Erreur:
 }
 ```
 
-Le runner doit accepter seulement ces formes et convertir les erreurs internes en erreurs MCP structurées.
+Le runner doit accepter seulement ces formes et convertir les erreurs internes en erreurs MCP structurées. Les warnings Godot émis pendant la compilation, l'instanciation ou l'exécution du script doivent être ajoutés au champ `warnings`, y compris quand le résultat est une erreur structurée.
 
 ## GodotMcpApi
 

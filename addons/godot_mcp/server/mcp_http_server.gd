@@ -71,6 +71,9 @@ func _poll_client(client: Dictionary) -> bool:
 	if peer.get_status() != StreamPeerTCP.STATUS_CONNECTED:
 		return true
 
+	if bool(client.get("pending_response", false)):
+		return false
+
 	var available: int = peer.get_available_bytes()
 	if available > 0:
 		var read_result: Array = peer.get_data(available)
@@ -129,7 +132,9 @@ func _try_handle_request(client: Dictionary) -> bool:
 			})
 		"POST":
 			var body_bytes: PackedByteArray = buffer.slice(body_start, body_start + content_length)
+			client["pending_response"] = true
 			_handle_json_rpc(peer, body_bytes.get_string_from_utf8())
+			return false
 		_:
 			_send_http_response(peer, 405, "Method Not Allowed", "text/plain")
 
@@ -143,12 +148,17 @@ func _handle_json_rpc(peer: StreamPeerTCP, body: String) -> void:
 		_send_json(peer, 200, _protocol.parse_error(json.get_error_message()))
 		return
 
-	var protocol_response: Dictionary = _protocol.handle(json.data)
-	if not bool(protocol_response.get("has_response", false)):
-		_send_http_response(peer, 204, "", "application/json")
-		return
+	_protocol.handle_async(json.data, func(protocol_response: Dictionary) -> void:
+		peer.poll()
+		if peer.get_status() != StreamPeerTCP.STATUS_CONNECTED:
+			return
 
-	_send_json(peer, 200, protocol_response["response"])
+		if not bool(protocol_response.get("has_response", false)):
+			_send_http_response(peer, 204, "", "application/json")
+			return
+
+		_send_json(peer, 200, protocol_response["response"])
+	)
 
 
 func _parse_content_length(lines: PackedStringArray) -> int:

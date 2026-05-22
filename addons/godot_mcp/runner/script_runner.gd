@@ -20,46 +20,78 @@ func _init(editor_interface: EditorInterface = null, log_buffer = null) -> void:
 
 
 func run(code: Variant, args: Variant = {}) -> Dictionary:
+	var prepared := _prepare_script(code, args)
+	if not bool(prepared.get("ok", false)):
+		return prepared["result"]
+
+	var runtime_log_cursor := _log_cursor()
+	var raw_result: Variant = prepared["instance"].call("run", prepared["api"], args)
+	var warning_logs: Array = prepared.get("warning_logs", [])
+	warning_logs.append_array(_new_warning_logs(runtime_log_cursor))
+	return _normalize_result(raw_result, _new_error_logs(runtime_log_cursor), warning_logs)
+
+
+func run_deferred(code: Variant, args: Variant, callback: Callable) -> void:
+	var prepared := _prepare_script(code, args)
+	if not bool(prepared.get("ok", false)):
+		callback.call(prepared["result"])
+		return
+
+	call_deferred("_run_prepared_deferred", prepared["instance"], prepared["api"], args, prepared.get("warning_logs", []), callback)
+
+
+func _prepare_script(code: Variant, args: Variant = {}) -> Dictionary:
 	if typeof(code) != TYPE_STRING:
-		return _error(INVALID_SCRIPT, "Script code must be a string")
+		return {"ok": false, "result": _error(INVALID_SCRIPT, "Script code must be a string")}
 
 	var source: String = String(code)
 	if source.strip_edges().is_empty():
-		return _error(INVALID_SCRIPT, "Script code must not be empty")
+		return {"ok": false, "result": _error(INVALID_SCRIPT, "Script code must not be empty")}
 
 	if source.length() > MAX_SCRIPT_CHARS:
-		return _error(INVALID_SCRIPT, "Script code exceeds the maximum size", {
+		return {"ok": false, "result": _error(INVALID_SCRIPT, "Script code exceeds the maximum size", {
 			"max_script_chars": MAX_SCRIPT_CHARS,
 			"actual_script_chars": source.length(),
-		})
+		})}
 
 	if not _has_ref_counted_extends(source):
-		return _error(INVALID_SCRIPT, "Script must extend RefCounted")
+		return {"ok": false, "result": _error(INVALID_SCRIPT, "Script must extend RefCounted")}
 
 	if not (args is Dictionary):
-		return _error(INVALID_SCRIPT, "Script args must be a Dictionary")
+		return {"ok": false, "result": _error(INVALID_SCRIPT, "Script args must be a Dictionary")}
 
 	var compile_log_cursor := _log_cursor()
 	var script := GDScript.new()
 	script.source_code = source
 	var reload_error: Error = script.reload()
 	if reload_error != OK:
-		return _error(SCRIPT_COMPILE_ERROR, "Failed to compile GDScript", _details_with_logs({
+		return {"ok": false, "result": _error(SCRIPT_COMPILE_ERROR, "Failed to compile GDScript", _details_with_logs({
 			"godot_error": int(reload_error),
-		}, compile_log_cursor))
+		}, compile_log_cursor))}
 
 	var runtime_log_cursor := _log_cursor()
 	var instance: Variant = script.new()
 	if instance == null:
-		return _error(SCRIPT_RUNTIME_ERROR, "Failed to instantiate script", _details_with_logs({}, runtime_log_cursor))
+		return {"ok": false, "result": _error(SCRIPT_RUNTIME_ERROR, "Failed to instantiate script", _details_with_logs({}, runtime_log_cursor))}
 
 	if not instance.has_method("run"):
-		return _error(MISSING_RUN_METHOD, "Script must define run(api, args)")
+		return {"ok": false, "result": _error(MISSING_RUN_METHOD, "Script must define run(api, args)")}
 
 	var api := GodotMcpApiScript.new(_editor_interface)
-	runtime_log_cursor = _log_cursor()
+	return {
+		"ok": true,
+		"instance": instance,
+		"api": api,
+		"warning_logs": _new_warning_logs(compile_log_cursor),
+	}
+
+
+func _run_prepared_deferred(instance: Variant, api: GodotMcpApi, args: Dictionary, prepare_warning_logs: Array, callback: Callable) -> void:
+	var runtime_log_cursor := _log_cursor()
 	var raw_result: Variant = instance.call("run", api, args)
-	return _normalize_result(raw_result, _new_error_logs(runtime_log_cursor))
+	var warning_logs := prepare_warning_logs.duplicate(true)
+	warning_logs.append_array(_new_warning_logs(runtime_log_cursor))
+	callback.call(_normalize_result(raw_result, _new_error_logs(runtime_log_cursor), warning_logs))
 
 
 func _has_ref_counted_extends(source: String) -> bool:
@@ -71,48 +103,50 @@ func _has_ref_counted_extends(source: String) -> bool:
 	return false
 
 
-func _normalize_result(result: Variant, error_logs: Array = []) -> Dictionary:
+func _normalize_result(result: Variant, error_logs: Array = [], warning_logs: Array = []) -> Dictionary:
+	var log_warnings := _warnings_from_logs(warning_logs)
 	if not (result is Dictionary):
-		return _error(INVALID_RESULT, "Script run() must return a Dictionary", _logs_details(error_logs))
+		return _error(INVALID_RESULT, "Script run() must return a Dictionary", _logs_details(error_logs), log_warnings)
 
 	if not result.has("ok") or typeof(result["ok"]) != TYPE_BOOL:
-		return _error(INVALID_RESULT, "Script result must contain a boolean ok field", _logs_details(error_logs))
+		return _error(INVALID_RESULT, "Script result must contain a boolean ok field", _logs_details(error_logs), log_warnings)
 
 	var normalized: Dictionary = result.duplicate(true)
 	normalized["warnings"] = _normalize_warnings(normalized.get("warnings", []))
 	if normalized["warnings"] == null:
-		return _error(INVALID_RESULT, "Script result warnings must be an Array")
+		return _error(INVALID_RESULT, "Script result warnings must be an Array", {}, log_warnings)
+	normalized["warnings"].append_array(log_warnings)
 
 	if bool(normalized["ok"]):
 		if not normalized.has("data"):
 			normalized["data"] = {}
 		if not (normalized["data"] is Dictionary):
-			return _error(INVALID_RESULT, "Successful script result data must be a Dictionary")
+			return _error(INVALID_RESULT, "Successful script result data must be a Dictionary", {}, log_warnings)
 
 		if not normalized.has("meta"):
 			normalized["meta"] = {}
 		if not (normalized["meta"] is Dictionary):
-			return _error(INVALID_RESULT, "Script result meta must be a Dictionary")
+			return _error(INVALID_RESULT, "Script result meta must be a Dictionary", {}, log_warnings)
 	else:
 		if not (normalized.get("error") is Dictionary):
-			return _error(INVALID_RESULT, "Failed script result must contain an error Dictionary")
+			return _error(INVALID_RESULT, "Failed script result must contain an error Dictionary", {}, log_warnings)
 
 		var error: Dictionary = normalized["error"]
 		if typeof(error.get("code")) != TYPE_STRING or String(error.get("code", "")).is_empty():
-			return _error(INVALID_RESULT, "Script error must contain a non-empty code")
+			return _error(INVALID_RESULT, "Script error must contain a non-empty code", {}, log_warnings)
 		if typeof(error.get("message")) != TYPE_STRING or String(error.get("message", "")).is_empty():
-			return _error(INVALID_RESULT, "Script error must contain a non-empty message")
+			return _error(INVALID_RESULT, "Script error must contain a non-empty message", {}, log_warnings)
 		if not error.has("details"):
 			error["details"] = {}
 		if not (error["details"] is Dictionary):
-			return _error(INVALID_RESULT, "Script error details must be a Dictionary")
+			return _error(INVALID_RESULT, "Script error details must be a Dictionary", {}, log_warnings)
 		if not normalized.has("meta"):
 			normalized["meta"] = {}
 		if not (normalized["meta"] is Dictionary):
-			return _error(INVALID_RESULT, "Script result meta must be a Dictionary")
+			return _error(INVALID_RESULT, "Script result meta must be a Dictionary", {}, log_warnings)
 
 	if not _is_json_compatible(normalized):
-		return _error(INVALID_RESULT, "Script result must be JSON-serializable")
+		return _error(INVALID_RESULT, "Script result must be JSON-serializable", {}, log_warnings)
 
 	return normalized
 
@@ -127,6 +161,12 @@ func _new_error_logs(cursor: int) -> Array:
 	if cursor < 0 or _log_buffer == null or not _log_buffer.has_method("get_entries_since"):
 		return []
 	return _log_buffer.get_entries_since(cursor, "editor", "error")
+
+
+func _new_warning_logs(cursor: int) -> Array:
+	if cursor < 0 or _log_buffer == null or not _log_buffer.has_method("get_entries_since"):
+		return []
+	return _log_buffer.get_entries_since(cursor, "editor", "warning")
 
 
 func _details_with_logs(details: Dictionary, cursor: int) -> Dictionary:
@@ -146,6 +186,22 @@ func _logs_details(logs: Array) -> Dictionary:
 func _normalize_warnings(warnings: Variant) -> Variant:
 	if not (warnings is Array):
 		return null
+	return warnings
+
+
+func _warnings_from_logs(logs: Array) -> Array:
+	var warnings: Array = []
+	for log_entry in logs:
+		if not (log_entry is Dictionary):
+			continue
+		var details: Dictionary = {}
+		for key in ["source", "time", "details"]:
+			if log_entry.has(key):
+				details[key] = log_entry[key]
+		warnings.append({
+			"message": String(log_entry.get("message", "")),
+			"details": details,
+		})
 	return warnings
 
 
@@ -172,7 +228,7 @@ func _is_json_compatible(value: Variant, depth: int = 0) -> bool:
 			return false
 
 
-func _error(code: String, message: String, details: Dictionary = {}) -> Dictionary:
+func _error(code: String, message: String, details: Dictionary = {}, warnings: Array = []) -> Dictionary:
 	return {
 		"ok": false,
 		"error": {
@@ -180,6 +236,6 @@ func _error(code: String, message: String, details: Dictionary = {}) -> Dictiona
 			"message": message,
 			"details": details,
 		},
-		"warnings": [],
+		"warnings": warnings,
 		"meta": {},
 	}
