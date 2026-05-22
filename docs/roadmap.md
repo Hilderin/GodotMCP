@@ -100,25 +100,7 @@ Critères d'acceptation:
 - OpenCode peut récupérer les logs du plugin;
 - la surface de tools reste courte.
 
-## Phase 5: Bridge Stdio Optionnel
-
-Objectif: supporter les clients MCP qui ne parlent pas HTTP.
-
-Livrables:
-
-- petit exécutable/script bridge;
-- stdin/stdout JSON-RPC;
-- forwarding vers HTTP localhost;
-- message clair si Godot n'est pas lancé;
-- exemple de config OpenCode si nécessaire.
-
-Critères d'acceptation:
-
-- le bridge n'a pas de logique Godot;
-- les mêmes tools sont visibles via stdio;
-- les erreurs HTTP/plugin sont préservées.
-
-## Phase 6: Skills MVP
+## Phase 5: Skills MVP
 
 Objectif: rendre le système utilisable par un LLM sans multiplier les tools.
 
@@ -138,7 +120,7 @@ Critères d'acceptation:
 - les snippets retournent `api.success` ou `api.error`;
 - les skills couvrent les workflows de base.
 
-## Phase 7: Tests Et Validation
+## Phase 6: Tests Et Validation
 
 Objectif: éviter de casser le contrat script/MCP.
 
@@ -155,7 +137,7 @@ Tests recommandés:
 - `get_editor_state`;
 - `get_scene_snapshot`;
 - UndoRedo sur création de node;
-- bridge stdio smoke test.
+
 
 Critères d'acceptation:
 
@@ -186,7 +168,6 @@ Critères d'acceptation:
 6. Ajouter UndoRedo helpers.
 7. Ajouter les tools core.
 8. Ajouter les skills MVP.
-9. Ajouter le bridge stdio.
-10. Ajouter les tests de contrat.
+9. Ajouter les tests de contrat.
 
 Ne pas commencer par les tools spécialisés. Le coeur du projet est le contrat scriptable.
