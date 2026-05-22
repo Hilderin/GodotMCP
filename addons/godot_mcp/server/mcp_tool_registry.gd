@@ -28,7 +28,7 @@ func list_tools() -> Array:
 		},
 		{
 			"name": "get_editor_state",
-			"description": "Return a compact snapshot of the Godot editor state.",
+			"description": "Return a compact snapshot of the Godot editor state including godot version, editor path, project path, current scene, selection, and play status.",
 			"inputSchema": _empty_object_schema(),
 		},
 		{

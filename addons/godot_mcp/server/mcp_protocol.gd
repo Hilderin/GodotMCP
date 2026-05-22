@@ -186,6 +186,7 @@ func _get_editor_state() -> Dictionary:
 
 	return _tool_success({
 		"godot_version": Engine.get_version_info().get("string", ""),
+		"editor_path": OS.get_executable_path(),
 		"project_path": ProjectSettings.globalize_path("res://"),
 		"current_scene_path": scene.scene_file_path if scene != null else "",
 		"current_scene_name": scene.name if scene != null else "",

@@ -76,6 +76,7 @@ Output recommandé:
   "ok": true,
   "data": {
     "godot_version": "4.4",
+    "editor_path": "/path/to/godot/executable",
     "project_path": "/path/to/project",
     "current_scene_path": "res://Main.tscn",
     "current_scene_name": "Main",
