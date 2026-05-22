@@ -203,7 +203,9 @@ func _get_scene_snapshot(arguments: Dictionary) -> Dictionary:
 	var api = GodotMcpApiScript.new(_get_editor_interface())
 	var include_properties := bool(arguments.get("include_properties", false))
 	var max_depth := int(arguments.get("max_depth", 32))
-	return api.success(api.get_scene_tree_snapshot(null, max_depth, include_properties))
+	var root_path := String(arguments.get("path", ""))
+	var max_length := int(arguments.get("max_length", 0))
+	return api.success(api.get_scene_tree_snapshot(null, max_depth, include_properties, root_path, max_length))
 
 
 func _get_logs(arguments: Dictionary) -> Dictionary:

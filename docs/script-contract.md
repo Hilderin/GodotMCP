@@ -101,7 +101,7 @@ func warning(message: String, details: Dictionary = {}) -> void
 func get_editor_interface() -> EditorInterface
 func get_current_scene() -> Node
 func get_selection() -> Array[Node]
-func get_scene_tree_snapshot(root: Node = null) -> Dictionary
+func get_scene_tree_snapshot(root: Node = null, max_depth: int = 32, include_properties: bool = false, root_path: String = "", max_length: int = 0) -> Dictionary
 
 func get_undo_redo() -> EditorUndoRedoManager
 func create_undo_action(name: String) -> void

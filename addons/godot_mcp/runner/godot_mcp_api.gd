@@ -74,7 +74,7 @@ func get_selection() -> Array[Node]:
 	return nodes
 
 
-func get_scene_tree_snapshot(root: Node = null, max_depth: int = 32, include_properties: bool = false) -> Dictionary:
+func get_scene_tree_snapshot(root: Node = null, max_depth: int = 32, include_properties: bool = false, root_path: String = "", max_length: int = 0) -> Dictionary:
 	var target := root
 	if target == null:
 		target = get_current_scene()
@@ -85,11 +85,26 @@ func get_scene_tree_snapshot(root: Node = null, max_depth: int = 32, include_pro
 			"root": {},
 		}
 
+	if not root_path.is_empty():
+		var resolved := _resolve_node_path(target, root_path)
+		if resolved == null:
+			return {
+				"error": "Node not found: " + root_path,
+			}
+		target = resolved
+
 	var depth_limit: int = clampi(max_depth, 0, 256)
-	return {
+	var budget: Array = [max_length] if max_length > 0 else []
+
+	var result := {
 		"scene_path": _node_scene_path(target),
-		"root": _snapshot_node(target, 0, depth_limit, include_properties, target),
+		"root": _snapshot_node(target, 0, depth_limit, include_properties, target, budget),
 	}
+
+	if budget.size() > 0 and budget[0] <= 0:
+		result["truncated"] = true
+
+	return result
 
 
 func get_undo_redo():
@@ -251,7 +266,7 @@ func _node_scene_path(node: Node) -> String:
 	return ""
 
 
-func _snapshot_node(node: Node, depth: int, max_depth: int, include_properties: bool, scene_root: Node) -> Dictionary:
+func _snapshot_node(node: Node, depth: int, max_depth: int, include_properties: bool, scene_root: Node, budget: Array = []) -> Dictionary:
 	var snapshot := {
 		"name": node.name,
 		"type": node.get_class(),
@@ -263,13 +278,79 @@ func _snapshot_node(node: Node, depth: int, max_depth: int, include_properties: 
 	if include_properties:
 		snapshot["properties"] = _snapshot_properties(node)
 
+	if budget.size() > 0:
+		budget[0] -= _estimate_node_cost(snapshot)
+
 	if depth >= max_depth:
 		return snapshot
 
 	for child in node.get_children():
 		if child is Node:
-			snapshot["children"].append(_snapshot_node(child, depth + 1, max_depth, include_properties, scene_root))
+			if budget.size() > 0 and budget[0] <= 0:
+				snapshot["truncated"] = true
+				break
+			snapshot["children"].append(_snapshot_node(child, depth + 1, max_depth, include_properties, scene_root, budget))
 	return snapshot
+
+
+func _resolve_node_path(scene_root: Node, path: String) -> Node:
+	var clean := path.trim_prefix("/")
+	if clean.is_empty():
+		return scene_root
+	var parts := clean.split("/", true, 1)
+	if parts.size() > 0 and parts[0] == scene_root.name:
+		if parts.size() > 1 and not parts[1].is_empty():
+			return scene_root.get_node_or_null(parts[1])
+		return scene_root
+	return scene_root.get_node_or_null(clean)
+
+
+func _estimate_node_cost(snapshot: Dictionary) -> int:
+	var cost := 0
+	cost += str(snapshot.get("name", "")).length()
+	cost += str(snapshot.get("type", "")).length()
+	cost += str(snapshot.get("path", "")).length()
+	cost += str(snapshot.get("scene_file_path", "")).length()
+	cost += 80
+	if snapshot.has("properties"):
+		for key in snapshot["properties"]:
+			cost += str(key).length() + 10
+			var val := snapshot["properties"][key]
+			cost += _estimate_value_cost(val)
+	return cost
+
+
+func _estimate_value_cost(value) -> int:
+	match typeof(value):
+		TYPE_NIL:
+			return 4
+		TYPE_BOOL:
+			return 4 if value else 5
+		TYPE_INT:
+			return len(str(value))
+		TYPE_FLOAT:
+			return len("%.4f" % value)
+		TYPE_STRING, TYPE_STRING_NAME:
+			return len(str(value)) + 2
+		TYPE_DICTIONARY:
+			var total := 2
+			for key in value:
+				total += str(key).length() + 2
+				total += _estimate_value_cost(value[key])
+				total += 2
+			return total
+		TYPE_ARRAY:
+			var total := 2
+			for item in value:
+				total += _estimate_value_cost(item)
+				total += 1
+			return total
+		TYPE_VECTOR2, TYPE_VECTOR2I:
+			return 20
+		TYPE_VECTOR3, TYPE_VECTOR3I:
+			return 30
+		_:
+			return str(value).length() + 2
 
 
 func _scene_node_path(node: Node, scene_root: Node) -> String:

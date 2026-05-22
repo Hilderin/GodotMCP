@@ -39,6 +39,8 @@ func list_tools() -> Array:
 				"properties": {
 					"include_properties": {"type": "boolean"},
 					"max_depth": {"type": "integer"},
+					"path": {"type": "string"},
+					"max_length": {"type": "integer"},
 				},
 				"additionalProperties": false,
 			},
