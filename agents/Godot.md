@@ -36,6 +36,12 @@ Every `godot_execute_editor_script` call must send a complete GDScript editor sc
 - Uses only JSON-serializable return values.
 - Checks required editor state, scene, nodes, resources, and arguments before mutating anything.
 
+## GodotMcpApi Reference
+
+- Reference path: `addons/godot_mcp/runner/GodotMcpApi.md`
+- Use this reference when writing `godot_execute_editor_script` scripts that call `GodotMcpApi` methods.
+- Keep specialized skills focused on workflow recipes; keep the full API surface documented in this addon reference.
+
 ## Mutation Rules
 
 - Use UndoRedo helpers for every scene mutation.

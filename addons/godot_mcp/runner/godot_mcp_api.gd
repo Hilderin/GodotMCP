@@ -58,6 +58,37 @@ func get_current_scene() -> Node:
 	return editor_interface.get_edited_scene_root()
 
 
+func open_scene(path: String) -> Dictionary:
+	var editor_interface = get_editor_interface()
+	if editor_interface == null:
+		return error("EDITOR_UNAVAILABLE", "EditorInterface is not available")
+
+	var scene_path := require_res_path(path)
+	if scene_path.is_empty() or not scene_path.begins_with("res://"):
+		return error("INVALID_SCENE_PATH", "Scene path must be inside res://", {"path": path})
+	if not FileAccess.file_exists(scene_path):
+		return error("SCENE_NOT_FOUND", "Scene file does not exist", {"path": scene_path})
+
+	editor_interface.open_scene_from_path(scene_path)
+
+	var scene := get_current_scene()
+	if scene == null:
+		return error("SCENE_OPEN_FAILED", "Scene did not become available after opening", {"path": scene_path})
+	if scene.scene_file_path != scene_path:
+		return error("SCENE_FOCUS_FAILED", "Opened scene is not the edited scene", {
+			"expected_path": scene_path,
+			"current_path": scene.scene_file_path,
+		})
+
+	var main_screen := _focus_scene_editor(scene)
+	return success({
+		"path": scene.scene_file_path,
+		"root_name": scene.name,
+		"root_type": scene.get_class(),
+		"main_screen": main_screen,
+	})
+
+
 func get_selection() -> Array[Node]:
 	var nodes: Array[Node] = []
 	var editor_interface = get_editor_interface()
@@ -275,6 +306,31 @@ func _get_editor_interface_singleton():
 	if not Engine.has_singleton("EditorInterface"):
 		return null
 	return Engine.get_singleton("EditorInterface")
+
+
+func _focus_scene_editor(scene: Node) -> String:
+	var editor_interface = get_editor_interface()
+	if editor_interface == null or scene == null:
+		return ""
+
+	var main_screen := ""
+	if scene is Node3D:
+		main_screen = "3D"
+	elif scene is CanvasItem:
+		main_screen = "2D"
+
+	if not main_screen.is_empty():
+		editor_interface.set_main_screen_editor(main_screen)
+
+	editor_interface.edit_node(scene)
+	editor_interface.inspect_object(scene)
+
+	var selection = editor_interface.get_selection()
+	if selection != null:
+		selection.clear()
+		selection.add_node(scene)
+
+	return main_screen
 
 
 func _node_scene_path(node: Node) -> String:
