@@ -88,7 +88,7 @@ func get_scene_tree_snapshot(root: Node = null, max_depth: int = 32, include_pro
 	var depth_limit: int = clampi(max_depth, 0, 256)
 	return {
 		"scene_path": _node_scene_path(target),
-		"root": _snapshot_node(target, 0, depth_limit, include_properties),
+		"root": _snapshot_node(target, 0, depth_limit, include_properties, target),
 	}
 
 
@@ -251,11 +251,11 @@ func _node_scene_path(node: Node) -> String:
 	return ""
 
 
-func _snapshot_node(node: Node, depth: int, max_depth: int, include_properties: bool) -> Dictionary:
+func _snapshot_node(node: Node, depth: int, max_depth: int, include_properties: bool, scene_root: Node) -> Dictionary:
 	var snapshot := {
 		"name": node.name,
 		"type": node.get_class(),
-		"path": str(node.get_path()),
+		"path": _scene_node_path(node, scene_root),
 		"scene_file_path": node.scene_file_path,
 		"children": [],
 	}
@@ -268,8 +268,16 @@ func _snapshot_node(node: Node, depth: int, max_depth: int, include_properties: 
 
 	for child in node.get_children():
 		if child is Node:
-			snapshot["children"].append(_snapshot_node(child, depth + 1, max_depth, include_properties))
+			snapshot["children"].append(_snapshot_node(child, depth + 1, max_depth, include_properties, scene_root))
 	return snapshot
+
+
+func _scene_node_path(node: Node, scene_root: Node) -> String:
+	if node == scene_root:
+		return "/%s" % scene_root.name
+	if scene_root.is_ancestor_of(node):
+		return "/%s/%s" % [scene_root.name, str(scene_root.get_path_to(node))]
+	return str(node.get_path())
 
 
 func _snapshot_properties(object: Object) -> Dictionary:

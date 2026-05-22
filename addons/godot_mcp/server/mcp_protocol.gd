@@ -2,6 +2,7 @@ extends RefCounted
 
 const JsonRpc := preload("../utils/json_rpc.gd")
 const ScriptRunner := preload("../runner/script_runner.gd")
+const GodotMcpApiScript := preload("../runner/godot_mcp_api.gd")
 
 const PROTOCOL_VERSION := "2024-11-05"
 
@@ -137,6 +138,18 @@ func _tool_call(params: Variant) -> Dictionary:
 	if tool_name == "get_logs":
 		return {"result": _tool_result(_get_logs(arguments))}
 
+	if tool_name == "get_editor_state":
+		return {"result": _tool_result(_get_editor_state())}
+
+	if tool_name == "get_scene_snapshot":
+		return {"result": _tool_result(_get_scene_snapshot(arguments))}
+
+	if tool_name == "run_project":
+		return {"result": _tool_result(_run_project(arguments))}
+
+	if tool_name == "stop_project":
+		return {"result": _tool_result(_stop_project())}
+
 	return {
 		"error": {
 			"code": JsonRpc.INTERNAL_ERROR,
@@ -158,30 +171,124 @@ func _tool_result(result: Dictionary) -> Dictionary:
 	}
 
 
+func _get_editor_state() -> Dictionary:
+	var editor_interface = _get_editor_interface()
+	if editor_interface == null:
+		return _tool_error("EDITOR_UNAVAILABLE", "EditorInterface is not available")
+
+	var scene = editor_interface.get_edited_scene_root()
+	var selection_paths := []
+	var selection = editor_interface.get_selection()
+	if selection != null:
+		for node in selection.get_selected_nodes():
+			if node is Node:
+				selection_paths.append(_scene_node_path(node, scene))
+
+	return _tool_success({
+		"godot_version": Engine.get_version_info().get("string", ""),
+		"project_path": ProjectSettings.globalize_path("res://"),
+		"current_scene_path": scene.scene_file_path if scene != null else "",
+		"current_scene_name": scene.name if scene != null else "",
+		"selection": selection_paths,
+		"is_playing": editor_interface.is_playing_scene(),
+		"playing_scene": editor_interface.get_playing_scene() if editor_interface.is_playing_scene() else "",
+	})
+
+
+func _get_scene_snapshot(arguments: Dictionary) -> Dictionary:
+	var api = GodotMcpApiScript.new(_get_editor_interface())
+	var include_properties := bool(arguments.get("include_properties", false))
+	var max_depth := int(arguments.get("max_depth", 32))
+	return api.success(api.get_scene_tree_snapshot(null, max_depth, include_properties))
+
+
 func _get_logs(arguments: Dictionary) -> Dictionary:
 	if _log_buffer == null:
-		return {
-			"ok": false,
-			"error": {
-				"code": "LOG_BUFFER_UNAVAILABLE",
-				"message": "Console log buffer is not available",
-				"details": {},
-			},
-			"warnings": [],
-			"meta": {},
-		}
+		return _tool_error("LOG_BUFFER_UNAVAILABLE", "Console log buffer is not available")
 
 	var source := String(arguments.get("source", ""))
 	var level := String(arguments.get("level", ""))
 	var limit := int(arguments.get("limit", 0))
+	return _tool_success({
+		"entries": _log_buffer.get_entries(source, limit, level),
+	})
+
+
+func _run_project(arguments: Dictionary) -> Dictionary:
+	var editor_interface = _get_editor_interface()
+	if editor_interface == null:
+		return _tool_error("EDITOR_UNAVAILABLE", "EditorInterface is not available")
+
+	var scene_path := String(arguments.get("scene_path", "")).strip_edges()
+	if scene_path.is_empty():
+		var main_scene := String(ProjectSettings.get_setting("application/run/main_scene", ""))
+		if main_scene.is_empty():
+			return _tool_error("MAIN_SCENE_NOT_CONFIGURED", "No main scene is configured; pass scene_path or set application/run/main_scene")
+		if not FileAccess.file_exists(main_scene):
+			return _tool_error("MAIN_SCENE_NOT_FOUND", "Configured main scene file does not exist", {"scene_path": main_scene})
+		editor_interface.play_main_scene()
+	else:
+		if not scene_path.begins_with("res://"):
+			return _tool_error("INVALID_SCENE_PATH", "scene_path must be empty or a res:// path", {"scene_path": scene_path})
+		if not FileAccess.file_exists(scene_path):
+			return _tool_error("SCENE_NOT_FOUND", "Scene file does not exist", {"scene_path": scene_path})
+		editor_interface.play_custom_scene(scene_path)
+
+	return _tool_success({
+		"is_playing": editor_interface.is_playing_scene(),
+		"scene_path": editor_interface.get_playing_scene() if editor_interface.is_playing_scene() else scene_path,
+	})
+
+
+func _stop_project() -> Dictionary:
+	var editor_interface = _get_editor_interface()
+	if editor_interface == null:
+		return _tool_error("EDITOR_UNAVAILABLE", "EditorInterface is not available")
+
+	if editor_interface.is_playing_scene():
+		editor_interface.stop_playing_scene()
+
+	return _tool_success({
+		"is_playing": editor_interface.is_playing_scene(),
+	})
+
+
+func _tool_success(data: Dictionary) -> Dictionary:
 	return {
 		"ok": true,
-		"data": {
-			"entries": _log_buffer.get_entries(source, limit, level),
+		"data": data,
+		"warnings": [],
+		"meta": {},
+	}
+
+
+func _tool_error(code: String, message: String, details: Dictionary = {}) -> Dictionary:
+	return {
+		"ok": false,
+		"error": {
+			"code": code,
+			"message": message,
+			"details": details,
 		},
 		"warnings": [],
 		"meta": {},
 	}
+
+
+func _get_editor_interface():
+	if _editor_interface != null:
+		return _editor_interface
+	if Engine.has_singleton("EditorInterface"):
+		return Engine.get_singleton("EditorInterface")
+	return null
+
+
+func _scene_node_path(node: Node, scene_root: Node) -> String:
+	if scene_root != null and node == scene_root:
+		return "/%s" % scene_root.name
+	if scene_root != null and scene_root.is_ancestor_of(node):
+		return "/%s/%s" % [scene_root.name, str(scene_root.get_path_to(node))]
+	return str(node.get_path())
 
 
 func _ensure_script_runner() -> void:
