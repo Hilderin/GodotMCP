@@ -33,4 +33,4 @@ La phase 1 expose le handshake MCP minimal, `tools/list`, un registry interne de
 
 ---
 
-*Built with curiosity, Python and a bit of AI.*
+*Built with curiosity, GDScript and a bit of AI.*
