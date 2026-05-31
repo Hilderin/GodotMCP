@@ -30,3 +30,7 @@ curl -s http://127.0.0.1:9700 \
 ```
 
 La phase 1 expose le handshake MCP minimal, `tools/list`, un registry interne des tools MVP et des erreurs JSON-RPC structurées. L'exécution effective des tools arrive dans les phases suivantes.
+
+---
+
+*Built with curiosity, Python and a bit of AI.*

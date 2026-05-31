@@ -2,7 +2,6 @@
 name: godot
 description: Use for GodotMCP workflows, Godot editor automation, scene editing, debugging, resources, input map, UI, signals, and project settings.
 mode: all
-model: inherit
 skills:
   - godot-scene-editing
   - godot-debugging
